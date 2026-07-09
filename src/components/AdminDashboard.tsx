@@ -21,6 +21,10 @@ export function AdminDashboard() {
   // Estados de filtro
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   // Estados dos Modais / Formulários
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -121,34 +125,75 @@ export function AdminDashboard() {
     if (savedPartner) {
       if (savedPartner.payment_type === 'permuta' && savedPartner.barter_product_description) {
         try {
+          // Buscar todos os prêmios existentes para esse parceiro, ordenados pela data de recebimento
           const { data: existingPrizes } = await supabase
             .from('tv_prizes')
-            .select('id, quantity_received, quantity_used')
-            .eq('partner_id', savedPartner.id);
+            .select('id, quantity_received, quantity_used, received_date')
+            .eq('partner_id', savedPartner.id)
+            .order('received_date', { ascending: true });
 
-          if (existingPrizes && existingPrizes.length > 0) {
-            // Já existe prêmio cadastrado para o parceiro, atualiza a descrição e a quantidade recebida
-            const firstPrize = existingPrizes[0];
-            await supabase
-              .from('tv_prizes')
-              .update({
+          const duration = savedPartner.duration_months || 12;
+          const prizesToInsert = [];
+          const prizesToUpdate = [];
+
+          for (let i = 0; i < duration; i++) {
+            // Calcular data esperada para o mês i
+            const baseDate = new Date((savedPartner.start_date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
+            baseDate.setMonth(baseDate.getMonth() + i);
+            const expectedDate = baseDate.toISOString().split('T')[0];
+
+            const existing = existingPrizes?.[i];
+            if (existing) {
+              // Atualizar prêmio existente mantendo quantity_used e last_used_date intactos
+              prizesToUpdate.push(
+                supabase
+                  .from('tv_prizes')
+                  .update({
+                    description: savedPartner.barter_product_description,
+                    quantity_received: savedPartner.barter_product_quantity || 1,
+                    received_date: expectedDate,
+                  })
+                  .eq('id', existing.id)
+              );
+            } else {
+              // Inserir novo prêmio para este mês
+              prizesToInsert.push({
+                partner_id: savedPartner.id,
                 description: savedPartner.barter_product_description,
                 quantity_received: savedPartner.barter_product_quantity || 1,
-              })
-              .eq('id', firstPrize.id);
-          } else {
-            // Não existe prêmio cadastrado, cria um novo
-            await supabase.from('tv_prizes').insert([{
-              partner_id: savedPartner.id,
-              description: savedPartner.barter_product_description,
-              quantity_received: savedPartner.barter_product_quantity || 1,
-              quantity_used: 0,
-              received_date: savedPartner.start_date || new Date().toISOString().split('T')[0],
-            }]);
+                quantity_used: 0,
+                received_date: expectedDate,
+              });
+            }
           }
+
+          // Executar atualizações
+          if (prizesToUpdate.length > 0) {
+            await Promise.all(prizesToUpdate);
+          }
+
+          // Inserir novos registros
+          if (prizesToInsert.length > 0) {
+            const { error: insertErr } = await supabase
+              .from('tv_prizes')
+              .insert(prizesToInsert);
+            if (insertErr) throw insertErr;
+          }
+
+          // Se a duração do contrato diminuiu, remover os prêmios extras/excedentes
+          if (existingPrizes && existingPrizes.length > duration) {
+            const extraPrizes = existingPrizes.slice(duration);
+            const idsToDelete = extraPrizes.map(p => p.id);
+            const { error: deleteErr } = await supabase
+              .from('tv_prizes')
+              .delete()
+              .in('id', idsToDelete);
+            if (deleteErr) throw deleteErr;
+          }
+
           await loadPrizes();
         } catch (err) {
-          console.error('Erro ao sincronizar prêmios do parceiro:', err);
+          console.error('Erro ao sincronizar prêmios mensais do parceiro:', err);
         }
       } else if (savedPartner.payment_type === 'financeiro') {
         // Se mudou para financeiro, remove os prêmios associados apenas se nenhum foi utilizado ainda
@@ -359,6 +404,27 @@ export function AdminDashboard() {
       return matchStatus && matchSearch;
     });
   }, [partners, searchQuery, statusFilter]);
+
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    // Garantir que o mês atual esteja na lista por padrão
+    const today = new Date();
+    months.add(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
+    
+    prizes.forEach(p => {
+      if (p.received_date) {
+        const [year, month] = p.received_date.split('-');
+        months.add(`${year}-${month}`);
+      }
+    });
+    
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [prizes]);
+
+  const filteredPrizes = useMemo(() => {
+    if (selectedMonth === 'all') return prizes;
+    return prizes.filter(p => p.received_date && p.received_date.startsWith(selectedMonth));
+  }, [prizes, selectedMonth]);
 
   const formatCurrency = (v: number) =>
     v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -773,31 +839,46 @@ export function AdminDashboard() {
           
           {/* Tabela de Prêmios */}
           <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '16px', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f4f4f5' }}>Controle de Prêmios e Permutas Físicas</h3>
-              <button
-                onClick={() => {
-                  if (partners.length === 0) {
-                    alert('Por favor, cadastre pelo menos um parceiro antes de registrar prêmios.');
-                    return;
-                  }
-                  setEditPrize(null);
-                   setPrizeForm({
-                     partner_id: partners[0].id,
-                     description: '',
-                     quantity_received: 1,
-                     quantity_used: 0,
-                     received_date: new Date().toISOString().split('T')[0],
-                     last_used_date: '',
-                     notes: ''
-                   });
-                   setIsPrizeFormOpen(true);
-                 }}
-                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--brand)', color: 'white', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}
-               >
-                 <Plus size={12} /> Registrar Doação
-               </button>
-             </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <select
+                  value={selectedMonth}
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  style={{ background: '#09090b', border: '1px solid #27272a', borderRadius: '8px', padding: '6px 12px', color: '#f4f4f5', fontSize: '0.75rem', outline: 'none', cursor: 'pointer' }}
+                >
+                  <option value="all">Todos os Meses</option>
+                  {availableMonths.map(m => {
+                    const [year, month] = m.split('-');
+                    const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                    const label = date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+                    return <option key={m} value={m}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>;
+                  })}
+                </select>
+                <button
+                  onClick={() => {
+                    if (partners.length === 0) {
+                      alert('Por favor, cadastre pelo menos um parceiro antes de registrar prêmios.');
+                      return;
+                    }
+                    setEditPrize(null);
+                    setPrizeForm({
+                      partner_id: partners[0].id,
+                      description: '',
+                      quantity_received: 1,
+                      quantity_used: 0,
+                      received_date: new Date().toISOString().split('T')[0],
+                      last_used_date: '',
+                      notes: ''
+                    });
+                    setIsPrizeFormOpen(true);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--brand)', color: 'white', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}
+                >
+                  <Plus size={12} /> Registrar Doação
+                </button>
+              </div>
+            </div>
  
              {prizes.length === 0 ? (
                <div style={{ padding: '32px', textAlign: 'center', color: '#52525b', fontSize: '0.8rem' }}>
@@ -809,15 +890,22 @@ export function AdminDashboard() {
                    <thead>
                      <tr style={{ borderBottom: '1px solid #27272a' }}>
                        {['Parceiro Doador', 'Descrição do Prêmio', 'Recebidos', 'Utilizados', 'Saldo Restante', 'Recebimento', 'Data de Uso', 'Ações'].map(h => (
-                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {prizes.map(p => {
-                      const balance = p.quantity_received - p.quantity_used;
+                         <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                           {h}
+                         </th>
+                       ))}
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {filteredPrizes.length === 0 ? (
+                       <tr>
+                         <td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#52525b' }}>
+                           Nenhum prêmio encontrado para o mês selecionado.
+                         </td>
+                       </tr>
+                     ) : (
+                       filteredPrizes.map(p => {
+                         const balance = p.quantity_received - p.quantity_used;
                       return (
                         <tr key={p.id} style={{ borderBottom: '1px solid #1c1c1f' }}>
                           <td style={{ padding: '12px 16px', fontWeight: 600, color: '#f4f4f5' }}>
@@ -900,7 +988,8 @@ export function AdminDashboard() {
                           </td>
                         </tr>
                       );
-                    })}
+                    })
+                  )}
                   </tbody>
                 </table>
               </div>
