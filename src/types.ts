@@ -34,6 +34,7 @@ export interface Plan {
   name: string;
   default_price: number;
   description: string | null;
+  duration_months: number;
   created_at: string;
 }
 

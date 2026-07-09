@@ -30,7 +30,7 @@ export function AdminDashboard() {
   // Estados de Gerenciamento de Planos
   const [isPlanFormOpen, setIsPlanFormOpen] = useState(false);
   const [editPlan, setEditPlan] = useState<Plan | null>(null);
-  const [planForm, setPlanForm] = useState({ name: '', default_price: 0, description: '' });
+  const [planForm, setPlanForm] = useState({ name: '', default_price: 0, description: '', duration_months: 1 });
 
   // Estados de Gerenciamento de Prêmios
   const [isPrizeFormOpen, setIsPrizeFormOpen] = useState(false);
@@ -147,7 +147,8 @@ export function AdminDashboard() {
           .update({
             name: planForm.name.trim(),
             default_price: planForm.default_price,
-            description: planForm.description.trim() || null
+            description: planForm.description.trim() || null,
+            duration_months: planForm.duration_months
           })
           .eq('id', editPlan.id);
         if (error) throw error;
@@ -157,13 +158,14 @@ export function AdminDashboard() {
           .insert([{
             name: planForm.name.trim(),
             default_price: planForm.default_price,
-            description: planForm.description.trim() || null
+            description: planForm.description.trim() || null,
+            duration_months: planForm.duration_months
           }]);
         if (error) throw error;
       }
       setIsPlanFormOpen(false);
       setEditPlan(null);
-      setPlanForm({ name: '', default_price: 0, description: '' });
+      setPlanForm({ name: '', default_price: 0, description: '', duration_months: 1 });
       await loadPlans();
     } catch (err) {
       console.error(err);
@@ -260,6 +262,19 @@ export function AdminDashboard() {
     return { total: partners.length, mrr, pendingSign, active: activePartners.length, bartersCount };
   }, [partners]);
 
+  const expiringThisMonthList = useMemo(() => {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth(); // 0-indexed
+
+    return partners.filter(p => {
+      if (p.status !== 'active') return false;
+      const startDt = new Date(p.start_date + 'T12:00:00');
+      startDt.setMonth(startDt.getMonth() + p.duration_months);
+      return startDt.getFullYear() === currentYear && startDt.getMonth() === currentMonth;
+    });
+  }, [partners]);
+
   const filteredPartners = useMemo(() => {
     return partners.filter(p => {
       const matchStatus = statusFilter === 'all' || p.status === statusFilter;
@@ -343,6 +358,29 @@ export function AdminDashboard() {
       {/* ────────────────── ABA 1: PARCEIROS ────────────────── */}
       {activeTab === 'partners' && (
         <>
+          {/* Banner de Alerta de Vencimento no Mês */}
+          {expiringThisMonthList.length > 0 && (
+            <div style={{ background: 'rgba(250,204,21,0.05)', border: '1px solid rgba(250,204,21,0.2)', padding: '16px 20px', borderRadius: '16px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#facc15' }}>
+                <Clock size={16} />
+                <h4 style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Aviso: {expiringThisMonthList.length} {expiringThisMonthList.length === 1 ? 'assinatura vence' : 'assinaturas vencem'} este mês!
+                </h4>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                {expiringThisMonthList.map(p => {
+                  const end = new Date(p.start_date + 'T12:00:00');
+                  end.setMonth(end.getMonth() + p.duration_months);
+                  return (
+                    <span key={p.id} style={{ background: '#27272a', border: '1px solid #3f3f46', borderRadius: '8px', padding: '4px 10px', fontSize: '0.75rem', color: '#f4f4f5' }}>
+                      <strong>{p.company_name}</strong> (Vence em {end.toLocaleDateString('pt-BR')})
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Toolbar */}
           <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '16px', padding: '16px 20px', marginBottom: '16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '200px' }}>
@@ -422,6 +460,34 @@ export function AdminDashboard() {
                           <span style={{ background: 'var(--brand)', color: 'white', padding: '2px 10px', borderRadius: '9999px', fontSize: '0.65rem', fontWeight: 700 }}>
                             {partner.plan_name}
                           </span>
+                          {partner.status === 'active' && (() => {
+                            const start = new Date(partner.start_date + 'T12:00:00');
+                            start.setMonth(start.getMonth() + partner.duration_months);
+                            const today = new Date();
+                            today.setHours(12, 0, 0, 0); // Normaliza tempo
+                            const diffTime = start.getTime() - today.getTime();
+                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            
+                            if (diffDays <= 0) {
+                              return (
+                                <span style={{ display: 'block', fontSize: '0.65rem', color: '#f87171', marginTop: '6px', fontWeight: 700 }}>
+                                  Vencido há {Math.abs(diffDays)} dias
+                                </span>
+                              );
+                            } else if (diffDays <= 30) {
+                              return (
+                                <span style={{ display: 'block', fontSize: '0.65rem', color: '#facc15', marginTop: '6px', fontWeight: 700 }}>
+                                  Restam {diffDays} dias
+                                </span>
+                              );
+                            } else {
+                              return (
+                                <span style={{ display: 'block', fontSize: '0.65rem', color: '#71717a', marginTop: '6px', fontWeight: 500 }}>
+                                  Restam {diffDays} dias
+                                </span>
+                              );
+                            }
+                          })()}
                         </td>
                         <td style={{ padding: '14px 16px' }}>
                           {partner.payment_type === 'permuta' ? (
@@ -512,7 +578,7 @@ export function AdminDashboard() {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f4f4f5' }}>Planos Disponíveis</h3>
               <button
-                onClick={() => { setEditPlan(null); setPlanForm({ name: '', default_price: 0, description: '' }); setIsPlanFormOpen(true); }}
+                onClick={() => { setEditPlan(null); setPlanForm({ name: '', default_price: 0, description: '', duration_months: 1 }); setIsPlanFormOpen(true); }}
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--brand)', color: 'white', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}
               >
                 <Plus size={12} /> Novo Plano
@@ -528,7 +594,7 @@ export function AdminDashboard() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #27272a' }}>
-                      {['Nome do Plano', 'Valor Padrão', 'Descrição', 'Ações'].map(h => (
+                      {['Nome do Plano', 'Duração', 'Valor Padrão', 'Descrição', 'Ações'].map(h => (
                         <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           {h}
                         </th>
@@ -541,6 +607,9 @@ export function AdminDashboard() {
                         <td style={{ padding: '12px 16px', fontWeight: 600, color: '#f4f4f5' }}>
                           {p.name}
                         </td>
+                        <td style={{ padding: '12px 16px', fontWeight: 650, color: '#e4e4e7' }}>
+                          {p.duration_months === 1 ? 'Mensal' : p.duration_months === 3 ? 'Trimestral' : p.duration_months === 6 ? 'Semestral' : p.duration_months === 12 ? 'Anual' : `${p.duration_months} meses`}
+                        </td>
                         <td style={{ padding: '12px 16px', fontWeight: 700, color: '#4ade80' }}>
                           {formatCurrency(p.default_price)}
                         </td>
@@ -550,7 +619,7 @@ export function AdminDashboard() {
                         <td style={{ padding: '12px 16px', width: '80px' }}>
                           <div style={{ display: 'flex', gap: '4px' }}>
                             <button
-                              onClick={() => { setEditPlan(p); setPlanForm({ name: p.name, default_price: p.default_price, description: p.description || '' }); setIsPlanFormOpen(true); }}
+                              onClick={() => { setEditPlan(p); setPlanForm({ name: p.name, default_price: p.default_price, description: p.description || '', duration_months: p.duration_months || 1 }); setIsPlanFormOpen(true); }}
                               style={{ padding: '4px', background: 'none', border: 'none', color: '#71717a', cursor: 'pointer' }}
                               title="Editar Plano"
                             >
@@ -593,6 +662,15 @@ export function AdminDashboard() {
                 <div>
                   <label style={labelStyle}>Preço Mensal Padrão (R$)</label>
                   <input required type="number" min="0" step="0.01" style={inputStyle} value={planForm.default_price} onChange={e => setPlanForm({ ...planForm, default_price: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Duração Padrão *</label>
+                  <select required style={{ ...inputStyle, cursor: 'pointer' }} value={planForm.duration_months} onChange={e => setPlanForm({ ...planForm, duration_months: parseInt(e.target.value) || 1 })}>
+                    <option value={1}>1 mês (Mensal)</option>
+                    <option value={3}>3 meses (Trimestral)</option>
+                    <option value={6}>6 meses (Semestral)</option>
+                    <option value={12}>12 meses (Anual)</option>
+                  </select>
                 </div>
                 <div>
                   <label style={labelStyle}>Descrição / Detalhes</label>

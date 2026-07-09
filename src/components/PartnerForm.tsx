@@ -80,8 +80,20 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
     setForm(prev => ({
       ...prev,
       plan_name: planName,
-      monthly_price: plan ? plan.default_price : prev.monthly_price
+      monthly_price: plan ? plan.default_price : prev.monthly_price,
+      duration_months: plan ? plan.duration_months : prev.duration_months
     }));
+  };
+
+  const getExpirationDate = () => {
+    if (!form.start_date) return '';
+    try {
+      const dt = new Date(form.start_date + 'T12:00:00');
+      dt.setMonth(dt.getMonth() + form.duration_months);
+      return dt.toLocaleDateString('pt-BR');
+    } catch {
+      return '';
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -212,6 +224,9 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
             <div>
               <label style={labelStyle}>Duração (meses)</label>
               <input type="number" min="1" style={inputStyle} value={form.duration_months} onChange={e => setForm({ ...form, duration_months: parseInt(e.target.value) || 12 })} />
+              <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--brand)', marginTop: '4px', fontWeight: 650 }}>
+                Vencimento: {getExpirationDate()}
+              </span>
             </div>
 
             {/* Status */}
