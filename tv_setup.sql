@@ -1,9 +1,33 @@
 -- ============================================================
--- OWN TV & PARCERIAS - Setup do Banco de Dados
+-- OWN TV & PARCERIAS - Setup Completo do Banco de Dados
 -- Execute este script no SQL Editor do Supabase
 -- ============================================================
 
--- 1. Tabela de Parceiros e Assinaturas
+-- 1. Criar Tabela de Planos
+CREATE TABLE IF NOT EXISTS tv_plans (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  default_price NUMERIC DEFAULT 0,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Habilitar RLS e criar políticas para Planos
+ALTER TABLE tv_plans ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Leitura Todos - Planos" ON tv_plans FOR SELECT USING (true);
+CREATE POLICY "Insert Todos - Planos" ON tv_plans FOR INSERT WITH CHECK (true);
+CREATE POLICY "Update Todos - Planos" ON tv_plans FOR UPDATE USING (true);
+CREATE POLICY "Delete Todos - Planos" ON tv_plans FOR DELETE USING (true);
+
+-- Inserir planos padrão iniciais
+INSERT INTO tv_plans (name, default_price, description) VALUES
+('Bronze', 150.00, 'Exibição básica em 1 TV'),
+('Prata', 300.00, 'Exibição em até 3 TVs'),
+('Ouro', 500.00, 'Exibição em até 5 TVs'),
+('Diamante', 1000.00, 'Exibição ilimitada em todas as TVs')
+ON CONFLICT (name) DO NOTHING;
+
+-- 2. Tabela de Parceiros e Assinaturas
 CREATE TABLE IF NOT EXISTS tv_partners (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   company_name TEXT NOT NULL,
@@ -23,11 +47,33 @@ CREATE TABLE IF NOT EXISTS tv_partners (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 2. RLS (Row Level Security)
-ALTER TABLE tv_partners ENABLE ROW LEVEL SECURITY;
+-- Expandir Tabela de Parceiros para Permuta se as colunas não existirem
+ALTER TABLE tv_partners ADD COLUMN IF NOT EXISTS payment_type TEXT DEFAULT 'financeiro' CHECK (payment_type IN ('financeiro', 'permuta'));
+ALTER TABLE tv_partners ADD COLUMN IF NOT EXISTS barter_product_description TEXT;
+ALTER TABLE tv_partners ADD COLUMN IF NOT EXISTS barter_product_quantity INT DEFAULT 0;
 
--- 3. Políticas de RLS
+-- Habilitar RLS e políticas para Parceiros
+ALTER TABLE tv_partners ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Leitura Todos - Parceiros" ON tv_partners FOR SELECT USING (true);
 CREATE POLICY "Insert Todos - Parceiros" ON tv_partners FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update Todos - Parceiros" ON tv_partners FOR UPDATE USING (true);
 CREATE POLICY "Delete Todos - Parceiros" ON tv_partners FOR DELETE USING (true);
+
+-- 3. Criar Tabela de Controle de Prêmios (Estoque de Doações)
+CREATE TABLE IF NOT EXISTS tv_prizes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  partner_id UUID REFERENCES tv_partners(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  quantity_received INT DEFAULT 1,
+  quantity_used INT DEFAULT 0,
+  received_date DATE DEFAULT CURRENT_DATE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Habilitar RLS e criar políticas para Prêmios
+ALTER TABLE tv_prizes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Leitura Todos - Premios" ON tv_prizes FOR SELECT USING (true);
+CREATE POLICY "Insert Todos - Premios" ON tv_prizes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Update Todos - Premios" ON tv_prizes FOR UPDATE USING (true);
+CREATE POLICY "Delete Todos - Premios" ON tv_prizes FOR DELETE USING (true);

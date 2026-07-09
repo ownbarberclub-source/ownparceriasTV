@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { Partner } from '../types';
+import type { Partner, Plan } from '../types';
+import { supabase } from '../supabaseClient';
 import { X, Save } from 'lucide-react';
 
 interface PartnerFormProps {
@@ -8,9 +9,8 @@ interface PartnerFormProps {
   onSave: (data: Partial<Partner>) => Promise<void>;
 }
 
-const PLANS = ['Bronze', 'Prata', 'Ouro', 'Diamante', 'Personalizado'];
-
 export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [form, setForm] = useState({
     company_name: '',
     trade_name: '',
@@ -19,15 +19,37 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
     contact_name: '',
     email: '',
     phone: '',
-    plan_name: 'Bronze',
+    plan_name: '',
     monthly_price: 0,
     is_signed: false,
     drive_link: '',
     start_date: new Date().toISOString().split('T')[0],
     duration_months: 12,
     status: 'pending' as 'active' | 'pending' | 'suspended',
+    // Campos de permuta
+    payment_type: 'financeiro' as 'financeiro' | 'permuta',
+    barter_product_description: '',
+    barter_product_quantity: 0,
   });
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchPlans = async () => {
+      const { data } = await supabase.from('tv_plans').select('*').order('name');
+      if (data && data.length > 0) {
+        setPlans(data);
+        if (!partner) {
+          // Inicializa com o primeiro plano se for novo cadastro
+          setForm(prev => ({
+            ...prev,
+            plan_name: data[0].name,
+            monthly_price: data[0].default_price
+          }));
+        }
+      }
+    };
+    fetchPlans();
+  }, [partner]);
 
   useEffect(() => {
     if (partner) {
@@ -46,15 +68,35 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
         start_date: partner.start_date,
         duration_months: partner.duration_months,
         status: partner.status,
+        payment_type: partner.payment_type || 'financeiro',
+        barter_product_description: partner.barter_product_description || '',
+        barter_product_quantity: partner.barter_product_quantity || 0,
       });
     }
   }, [partner]);
+
+  const handlePlanChange = (planName: string) => {
+    const plan = plans.find(p => p.name === planName);
+    setForm(prev => ({
+      ...prev,
+      plan_name: planName,
+      monthly_price: plan ? plan.default_price : prev.monthly_price
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave(form);
+      // Normaliza campos nulos/vazios
+      const payload: Partial<Partner> = {
+        ...form,
+        trade_name: form.trade_name.trim() || null,
+        drive_link: form.drive_link.trim() || null,
+        barter_product_description: form.payment_type === 'permuta' ? form.barter_product_description.trim() || null : null,
+        barter_product_quantity: form.payment_type === 'permuta' ? form.barter_product_quantity : 0,
+      };
+      await onSave(payload);
       onClose();
     } catch {
       alert('Erro ao salvar parceiro.');
@@ -140,14 +182,23 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
             {/* Plano */}
             <div>
               <label style={labelStyle}>Plano Escolhido *</label>
-              <select required style={{ ...inputStyle, cursor: 'pointer' }} value={form.plan_name} onChange={e => setForm({ ...form, plan_name: e.target.value })}>
-                {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+              <select required style={{ ...inputStyle, cursor: 'pointer' }} value={form.plan_name} onChange={e => handlePlanChange(e.target.value)}>
+                {plans.map(p => <option key={p.id} value={p.name}>{p.name} (Padrão: R$ {p.default_price})</option>)}
+              </select>
+            </div>
+
+            {/* Tipo de Pagamento */}
+            <div>
+              <label style={labelStyle}>Tipo de Pagamento *</label>
+              <select required style={{ ...inputStyle, cursor: 'pointer' }} value={form.payment_type} onChange={e => setForm({ ...form, payment_type: e.target.value as 'financeiro' | 'permuta' })}>
+                <option value="financeiro">Financeiro (Dinheiro/PIX)</option>
+                <option value="permuta">Permuta (Troca de Produtos/Prêmios)</option>
               </select>
             </div>
 
             {/* Valor Mensal */}
             <div>
-              <label style={labelStyle}>Valor Mensal (R$) *</label>
+              <label style={labelStyle}>Valor Mensal da Assinatura (R$) *</label>
               <input required type="number" min="0" step="0.01" style={inputStyle} value={form.monthly_price} onChange={e => setForm({ ...form, monthly_price: parseFloat(e.target.value) || 0 })} />
             </div>
 
@@ -172,6 +223,25 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
                 <option value="suspended">Suspenso</option>
               </select>
             </div>
+
+            {/* Seção Condicional de Permuta */}
+            {form.payment_type === 'permuta' && (
+              <div style={{ gridColumn: 'span 2', background: 'rgba(200,169,126,0.03)', border: '1px solid rgba(200,169,126,0.1)', padding: '16px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '4px' }}>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <h4 style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--brand)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                    Detalhes do Acordo de Permuta
+                  </h4>
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={labelStyle}>Descrição do Produto/Premio Prometido *</label>
+                  <input required={form.payment_type === 'permuta'} style={inputStyle} value={form.barter_product_description} onChange={e => setForm({ ...form, barter_product_description: e.target.value })} placeholder="Ex: 5 vales-compras de R$ 50,00 ou 10 pomadas modeladoras" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Quantidade de Produtos Prometida (Qtd. Mensal) *</label>
+                  <input required={form.payment_type === 'permuta'} type="number" min="0" style={inputStyle} value={form.barter_product_quantity} onChange={e => setForm({ ...form, barter_product_quantity: parseInt(e.target.value) || 0 })} />
+                </div>
+              </div>
+            )}
 
             {/* Separador de Assinatura */}
             <div style={{ gridColumn: 'span 2', borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '8px' }}>

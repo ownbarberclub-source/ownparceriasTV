@@ -15,6 +15,11 @@ export interface Partner {
   duration_months: number;
   status: 'active' | 'pending' | 'suspended';
   created_at: string;
+  
+  // Novos campos para permuta
+  payment_type: 'financeiro' | 'permuta';
+  barter_product_description: string | null;
+  barter_product_quantity: number;
 }
 
 export interface User {
@@ -22,4 +27,27 @@ export interface User {
   name: string;
   email: string;
   isAdmin: boolean;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  default_price: number;
+  description: string | null;
+  created_at: string;
+}
+
+export interface Prize {
+  id: string;
+  partner_id: string;
+  description: string;
+  quantity_received: number;
+  quantity_used: number;
+  received_date: string;
+  notes: string | null;
+  created_at: string;
+  // Relacionamento (Join)
+  tv_partners?: {
+    company_name: string;
+  };
 }
