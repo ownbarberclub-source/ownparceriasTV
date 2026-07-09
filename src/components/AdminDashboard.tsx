@@ -43,7 +43,7 @@ export function AdminDashboard() {
   const [confirmingPayment, setConfirmingPayment] = useState<Payment | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     payment_date: new Date().toISOString().split('T')[0],
-    payment_method: 'pix',
+    payment_method: 'cartão de crédito',
     notes: ''
   });
 
@@ -381,7 +381,7 @@ export function AdminDashboard() {
       setConfirmingPayment(null);
       setPaymentForm({
         payment_date: new Date().toISOString().split('T')[0],
-        payment_method: 'pix',
+        payment_method: 'cartão de crédito',
         notes: ''
       });
       await loadPayments();
@@ -427,7 +427,7 @@ export function AdminDashboard() {
       setConfirmingPayment(payment);
       setPaymentForm({
         payment_date: new Date().toISOString().split('T')[0],
-        payment_method: 'pix',
+        payment_method: 'cartão de crédito',
         notes: payment.notes || ''
       });
       setIsPaymentFormOpen(true);
@@ -1075,13 +1075,8 @@ export function AdminDashboard() {
                   <input required type="date" style={inputStyle} value={paymentForm.payment_date} onChange={e => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Meio de Pagamento *</label>
-                  <select required style={{ ...inputStyle, cursor: 'pointer' }} value={paymentForm.payment_method} onChange={e => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
-                    <option value="pix">PIX</option>
-                    <option value="cartão de crédito">Cartão de Crédito</option>
-                    <option value="boleto">Boleto Bancário</option>
-                    <option value="dinheiro">Dinheiro</option>
-                  </select>
+                  <label style={labelStyle}>Meio de Pagamento</label>
+                  <input readOnly style={{ ...inputStyle, opacity: 0.6, cursor: 'not-allowed' }} value="Cartão de Crédito" />
                 </div>
                 <div>
                   <label style={labelStyle}>Observações</label>
