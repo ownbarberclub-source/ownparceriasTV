@@ -35,7 +35,7 @@ export function ContractViewer({ partner, onClose }: ContractViewerProps) {
     return `
 TERMO DE PARCERIA COMERCIAL - OWN BARBER CLUB
 
-CONTRATANTE: OWN BARBER CLUB, empresa do segmento de barbearia premium, doravante denominada CONTRATANTE.
+CONTRATANTE: OWN BARBER CLUB LTDA, pessoa jurídica de direito privado, inscrita no CNPJ/MF sob o nº 19.690.372/0001-15, com sede na Avenida Fernando Machado, 1470, Centro, Chapecó/SC, CEP: 89803-003, neste ato representada por seu sócio-administrador Jeferson Cesar Lira, portador do CPF nº 000.174.370-83, doravante denominada simplesmente CONTRATANTE.
 
 CONTRATADO(A): ${partner.company_name}${partner.trade_name ? ` (${partner.trade_name})` : ''}, inscrito(a) sob CNPJ/CPF nº ${partner.cnpj_cpf}, com sede/domicílio no endereço ${partner.address}, representado(a) por ${partner.contact_name}, doravante denominado(a) CONTRATADO(A).
 
@@ -156,8 +156,9 @@ Data: ____/____/________
           <div>
             <div class="signature-line"></div>
             <div class="signature-name">
-              CONTRATANTE: OWN BARBER CLUB<br />
-              Representante Legal
+              CONTRATANTE: OWN BARBER CLUB LTDA<br />
+              Representante: Jeferson Cesar Lira<br />
+              CPF: 000.174.370-83
             </div>
           </div>
           <div>
@@ -245,7 +246,8 @@ Data: ____/____/________
               <div>
                 <div style={{ borderTop: '1px solid #1a1a1a', width: '90%', margin: '24px 0 4px 0' }}></div>
                 <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#4b5563' }}>
-                  CONTRATANTE: OWN BARBER CLUB
+                  CONTRATANTE: OWN BARBER CLUB LTDA<br />
+                  Rep: Jeferson Cesar Lira (CPF: 000.174.370-83)
                 </div>
               </div>
               <div>
