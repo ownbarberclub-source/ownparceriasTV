@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS tv_plans (
 
 -- Habilitar RLS e criar políticas para Planos
 ALTER TABLE tv_plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Leitura Todos - Planos" ON tv_plans;
+DROP POLICY IF EXISTS "Insert Todos - Planos" ON tv_plans;
+DROP POLICY IF EXISTS "Update Todos - Planos" ON tv_plans;
+DROP POLICY IF EXISTS "Delete Todos - Planos" ON tv_plans;
 CREATE POLICY "Leitura Todos - Planos" ON tv_plans FOR SELECT USING (true);
 CREATE POLICY "Insert Todos - Planos" ON tv_plans FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update Todos - Planos" ON tv_plans FOR UPDATE USING (true);
@@ -47,6 +51,10 @@ ALTER TABLE tv_partners ADD COLUMN IF NOT EXISTS barter_product_quantity INT DEF
 
 -- Habilitar RLS e políticas para Parceiros
 ALTER TABLE tv_partners ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Leitura Todos - Parceiros" ON tv_partners;
+DROP POLICY IF EXISTS "Insert Todos - Parceiros" ON tv_partners;
+DROP POLICY IF EXISTS "Update Todos - Parceiros" ON tv_partners;
+DROP POLICY IF EXISTS "Delete Todos - Parceiros" ON tv_partners;
 CREATE POLICY "Leitura Todos - Parceiros" ON tv_partners FOR SELECT USING (true);
 CREATE POLICY "Insert Todos - Parceiros" ON tv_partners FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update Todos - Parceiros" ON tv_partners FOR UPDATE USING (true);
@@ -66,6 +74,10 @@ CREATE TABLE IF NOT EXISTS tv_prizes (
 
 -- Habilitar RLS e criar políticas para Prêmios
 ALTER TABLE tv_prizes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Leitura Todos - Premios" ON tv_prizes;
+DROP POLICY IF EXISTS "Insert Todos - Premios" ON tv_prizes;
+DROP POLICY IF EXISTS "Update Todos - Premios" ON tv_prizes;
+DROP POLICY IF EXISTS "Delete Todos - Premios" ON tv_prizes;
 CREATE POLICY "Leitura Todos - Premios" ON tv_prizes FOR SELECT USING (true);
 CREATE POLICY "Insert Todos - Premios" ON tv_prizes FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update Todos - Premios" ON tv_prizes FOR UPDATE USING (true);
