@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS tv_plans (
   name TEXT NOT NULL UNIQUE,
   default_price NUMERIC DEFAULT 0,
   description TEXT,
+  duration_months INT DEFAULT 1, -- Duração padrão em meses
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -18,14 +19,6 @@ CREATE POLICY "Leitura Todos - Planos" ON tv_plans FOR SELECT USING (true);
 CREATE POLICY "Insert Todos - Planos" ON tv_plans FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update Todos - Planos" ON tv_plans FOR UPDATE USING (true);
 CREATE POLICY "Delete Todos - Planos" ON tv_plans FOR DELETE USING (true);
-
--- Inserir planos padrão iniciais
-INSERT INTO tv_plans (name, default_price, description) VALUES
-('Bronze', 150.00, 'Exibição básica em 1 TV'),
-('Prata', 300.00, 'Exibição em até 3 TVs'),
-('Ouro', 500.00, 'Exibição em até 5 TVs'),
-('Diamante', 1000.00, 'Exibição ilimitada em todas as TVs')
-ON CONFLICT (name) DO NOTHING;
 
 -- 2. Tabela de Parceiros e Assinaturas
 CREATE TABLE IF NOT EXISTS tv_partners (

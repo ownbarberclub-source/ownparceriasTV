@@ -194,9 +194,16 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
             {/* Plano */}
             <div>
               <label style={labelStyle}>Plano Escolhido *</label>
-              <select required style={{ ...inputStyle, cursor: 'pointer' }} value={form.plan_name} onChange={e => handlePlanChange(e.target.value)}>
-                {plans.map(p => <option key={p.id} value={p.name}>{p.name} (Padrão: R$ {p.default_price})</option>)}
-              </select>
+              {plans.length === 0 ? (
+                <div style={{ ...inputStyle, background: 'rgba(239,68,68,0.05)', color: '#f87171', border: '1px solid rgba(239,68,68,0.15)' }}>
+                  Nenhum plano cadastrado. Por favor, crie planos na aba "Planos de Anúncio".
+                </div>
+              ) : (
+                <select required style={{ ...inputStyle, cursor: 'pointer' }} value={form.plan_name} onChange={e => handlePlanChange(e.target.value)}>
+                  <option value="">Selecione um plano...</option>
+                  {plans.map(p => <option key={p.id} value={p.name}>{p.name} (Padrão: R$ {p.default_price})</option>)}
+                </select>
+              )}
             </div>
 
             {/* Tipo de Pagamento */}
