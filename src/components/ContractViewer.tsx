@@ -107,44 +107,98 @@ Chapecó/SC, ${formatDate(partner.start_date)}.
       <head>
         <meta charset="UTF-8" />
         <title>Contrato - ${partner.company_name}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Inter:wght@400;750;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Inter:wght@400;700&display=swap" rel="stylesheet">
         <style>
-          body { font-family: 'Inter', 'Times New Roman', serif; font-size: 11pt; line-height: 1.8; color: #1a1a1a; margin: 40px 60px; }
-          h1 { font-family: 'Montserrat', sans-serif; font-size: 14pt; text-align: center; margin-bottom: 8px; font-weight: 900; letter-spacing: 1px; color: #111; }
-          p { margin-bottom: 14px; text-align: justify; }
-          .signature-section { margin-top: 60px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
-          .signature-line { border-top: 1px solid #111; width: 85%; margin: 40px 0 4px 0; }
-          .signature-name { font-size: 9pt; font-weight: bold; color: #333; line-height: 1.4; }
+          @page {
+            size: A4;
+            margin: 20mm 15mm 20mm 15mm;
+          }
+          @media print {
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+          }
+          body {
+            font-family: 'Inter', sans-serif;
+            font-size: 10pt;
+            line-height: 1.6;
+            color: #1a1a1a;
+            margin: 0;
+            padding: 0;
+          }
+          h1 {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 13pt;
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 4px;
+            font-weight: 900;
+            letter-spacing: 0.5px;
+            color: #111;
+            page-break-after: avoid;
+          }
+          p {
+            margin-bottom: 10px;
+            text-align: justify;
+            text-indent: 1.2cm;
+          }
+          p.clause-title, p.date-line {
+            text-indent: 0;
+          }
+          .signature-section p {
+            text-indent: 0;
+          }
+          .signature-section {
+            margin-top: 35px;
+            display: flex;
+            justify-content: space-between;
+            page-break-inside: avoid;
+            gap: 40px;
+          }
+          .signature-box {
+            flex: 1;
+          }
+          .signature-line {
+            border-top: 1px solid #111;
+            margin: 30px 0 6px 0;
+          }
+          .signature-name {
+            font-size: 8pt;
+            font-weight: bold;
+            color: #333;
+            line-height: 1.4;
+          }
         </style>
       </head>
       <body>
         
         <!-- Header com Logo e Cores OWN -->
-        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #C8A97E; padding-bottom: 16px; margin-bottom: 32px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #C8A97E; padding-bottom: 16px; margin-bottom: 28px; page-break-inside: avoid;">
           <div style="display: flex; align-items: center; gap: 14px;">
-            <img src="${window.location.origin}${logoImg}" alt="OWN Logo" style="height: 52px; width: auto; object-fit: contain;" />
+            <img src="${window.location.origin}${logoImg}" alt="OWN Logo" style="height: 48px; width: auto; object-fit: contain;" />
             <div style="font-family: 'Montserrat', sans-serif;">
-              <h2 style="margin: 0; font-size: 15pt; font-weight: 900; letter-spacing: 0.5px; color: #111;">OWN</h2>
-              <span style="font-size: 7.5pt; text-transform: uppercase; color: #C8A97E; font-weight: 700; letter-spacing: 2px; display: block; margin-top: -2px;">Barber Club</span>
+              <h2 style="margin: 0; font-size: 14pt; font-weight: 900; letter-spacing: 0.5px; color: #111;">OWN</h2>
+              <span style="font-size: 7pt; text-transform: uppercase; color: #C8A97E; font-weight: 700; letter-spacing: 2px; display: block; margin-top: -2px;">Barber Club</span>
             </div>
           </div>
-          <div style="text-align: right; font-family: sans-serif; font-size: 8pt; color: #52525b; line-height: 1.4;">
+          <div style="text-align: right; font-family: sans-serif; font-size: 7.5pt; color: #52525b; line-height: 1.4;">
             <strong>OWN BARBER CLUB</strong><br />
             Termo de Parceria Indoor
           </div>
         </div>
 
         <h1>TERMO DE PARCERIA COMERCIAL</h1>
-        <h3 style="text-align:center; font-family: 'Montserrat', sans-serif; font-size: 11pt; font-weight: 700; color: #C8A97E; margin-bottom: 32px; letter-spacing: 1px;">TV INDOOR & B2B SPONSORSHIP</h3>
+        <h3 style="text-align:center; font-family: 'Montserrat', sans-serif; font-size: 10.5pt; font-weight: 700; color: #C8A97E; margin-top: 4px; margin-bottom: 24px; letter-spacing: 1px; page-break-after: avoid;">TV INDOOR & B2B SPONSORSHIP</h3>
         
         ${contractText
           .split('\n')
           .filter(line => !line.startsWith('TERMO DE PARCERIA'))
           .map(line => {
-            if (line.startsWith('CLÁUSULA')) return '<p style="margin-top: 24px; margin-bottom: 6px;"><strong>' + line + '</strong></p>';
+            if (line.startsWith('CLÁUSULA')) return '<p class="clause-title" style="margin-top: 18px; margin-bottom: 4px; page-break-after: avoid;"><strong>' + line + '</strong></p>';
             if (line.startsWith('_____')) return '';
             if (line.startsWith('CONTRATANTE -') || line.startsWith('CONTRATADO(A) -') || line.startsWith('CONTRATADO -')) return '';
-            if (line.startsWith('Chapecó/SC,') || line.startsWith('Data:')) return '<p style="margin-top: 32px;">' + line + '</p>';
+            if (line.startsWith('Chapecó/SC,') || line.startsWith('Data:')) return '<p class="date-line" style="margin-top: 24px;">' + line + '</p>';
             if (line.trim() === '') return '';
             return '<p>' + line + '</p>';
           })
@@ -153,7 +207,7 @@ Chapecó/SC, ${formatDate(partner.start_date)}.
 
         <!-- Sessão de Assinatura Organizada em Colunas -->
         <div class="signature-section">
-          <div>
+          <div class="signature-box">
             <div class="signature-line"></div>
             <div class="signature-name">
               CONTRATANTE: OWN BARBER CLUB LTDA<br />
@@ -161,7 +215,7 @@ Chapecó/SC, ${formatDate(partner.start_date)}.
               CPF: 000.174.370-83
             </div>
           </div>
-          <div>
+          <div class="signature-box">
             <div class="signature-line"></div>
             <div class="signature-name">
               CONTRATADO(A): ${partner.company_name.toUpperCase()}<br />
@@ -174,7 +228,11 @@ Chapecó/SC, ${formatDate(partner.start_date)}.
       </html>
     `);
     printWindow.document.close();
-    setTimeout(() => printWindow.print(), 300);
+
+    // Esperar todos os recursos (imagens, estilos, fontes) carregarem completamente
+    printWindow.onload = () => {
+      printWindow.print();
+    };
   };
 
   return (
