@@ -562,13 +562,21 @@ export function AdminDashboard() {
   // --- KPIs e Filtros ---
   const kpis = useMemo(() => {
     const activePartners = partners.filter(p => p.status === 'active');
-    const mrr = activePartners
-      .filter(p => p.payment_type !== 'permuta')
-      .reduce((sum, p) => sum + (p.monthly_price || 0), 0);
+    
+    // Faturamento Mensal baseado nos pagamentos recebidos (status === 'paid') no mês selecionado
+    // Se selecionado 'all', usamos o mês atual como padrão para o faturamento mensal
+    const today = new Date();
+    const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const targetMonth = selectedMonth === 'all' ? currentMonthStr : selectedMonth;
+    
+    const mrr = payments
+      .filter(p => p.status === 'paid' && p.due_date && p.due_date.startsWith(targetMonth))
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+
     const pendingSign = partners.filter(p => !p.is_signed).length;
     const bartersCount = activePartners.filter(p => p.payment_type === 'permuta').length;
     return { total: partners.length, mrr, pendingSign, active: activePartners.length, bartersCount };
-  }, [partners]);
+  }, [partners, payments, selectedMonth]);
 
   const expiringThisMonthList = useMemo(() => {
     const today = new Date();
