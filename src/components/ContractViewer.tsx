@@ -76,7 +76,7 @@ _____________________________________________
 CONTRATADO(A) - ${partner.company_name.toUpperCase()}
 ${partner.contact_name}
 
-Data: ____/____/________
+Chapecó/SC, ${formatDate(partner.start_date)}.
     `.trim();
   };
 
@@ -144,7 +144,7 @@ Data: ____/____/________
             if (line.startsWith('CLÁUSULA')) return '<p style="margin-top: 24px; margin-bottom: 6px;"><strong>' + line + '</strong></p>';
             if (line.startsWith('_____')) return '';
             if (line.startsWith('CONTRATANTE -') || line.startsWith('CONTRATADO(A) -') || line.startsWith('CONTRATADO -')) return '';
-            if (line.startsWith('Data:')) return '<p style="margin-top: 32px;">' + line + '</p>';
+            if (line.startsWith('Chapecó/SC,') || line.startsWith('Data:')) return '<p style="margin-top: 32px;">' + line + '</p>';
             if (line.trim() === '') return '';
             return '<p>' + line + '</p>';
           })
