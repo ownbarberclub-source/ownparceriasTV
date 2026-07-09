@@ -1,26 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import type { Partner, Plan, Prize } from '../types';
+import type { Partner, Plan, Prize, Payment } from '../types';
 import { PartnerForm } from './PartnerForm';
 import { ContractViewer } from './ContractViewer';
 import {
   Plus, Search, RefreshCw, DollarSign, Users, FileWarning,
   FileText, Edit2, Trash, ExternalLink, CheckCircle2, Clock, XCircle,
-  Gift, Info
+  Gift, Info, Calendar
 } from 'lucide-react';
 
 export function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'partners' | 'plans' | 'prizes'>('partners');
+  const [activeTab, setActiveTab] = useState<'partners' | 'finance' | 'plans' | 'prizes'>('partners');
   
   // Estados de dados
   const [partners, setPartners] = useState<Partner[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [prizes, setPrizes] = useState<Prize[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Estados de filtro
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -35,6 +37,15 @@ export function AdminDashboard() {
   const [isPlanFormOpen, setIsPlanFormOpen] = useState(false);
   const [editPlan, setEditPlan] = useState<Plan | null>(null);
   const [planForm, setPlanForm] = useState({ name: '', default_price: 0, description: '', duration_months: 1 });
+
+  // Estados de Gerenciamento de Pagamentos
+  const [isPaymentFormOpen, setIsPaymentFormOpen] = useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState<Payment | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    payment_date: new Date().toISOString().split('T')[0],
+    payment_method: 'pix',
+    notes: ''
+  });
 
   // Estados de Gerenciamento de Prêmios
   const [isPrizeFormOpen, setIsPrizeFormOpen] = useState(false);
@@ -59,7 +70,8 @@ export function AdminDashboard() {
       await Promise.all([
         loadPartners(),
         loadPlans(),
-        loadPrizes()
+        loadPrizes(),
+        loadPayments()
       ]);
     } catch (err) {
       console.error('Erro ao recarregar dados do painel:', err);
@@ -100,6 +112,20 @@ export function AdminDashboard() {
     setPrizes(data || []);
   };
 
+  const loadPayments = async () => {
+    const { data, error } = await supabase
+      .from('tv_payments')
+      .select(`
+        *,
+        tv_partners (
+          company_name
+        )
+      `)
+      .order('due_date', { ascending: false });
+    if (error) throw error;
+    setPayments(data || []);
+  };
+
   // --- Handlers de Parceiro ---
   const handleSavePartner = async (formData: Partial<Partner>) => {
     let savedPartner: Partner | null = null;
@@ -121,7 +147,7 @@ export function AdminDashboard() {
     }
     await loadPartners();
 
-    // Sincronizar automaticamente os prêmios se for permuta
+    // Sincronizar automaticamente os prêmios ou parcelas financeiras
     if (savedPartner) {
       if (savedPartner.payment_type === 'permuta' && savedPartner.barter_product_description) {
         try {
@@ -191,13 +217,102 @@ export function AdminDashboard() {
             if (deleteErr) throw deleteErr;
           }
 
+          // Limpar parcelas financeiras não pagas se mudou para permuta
+          const { data: existingPayments } = await supabase
+            .from('tv_payments')
+            .select('id, status')
+            .eq('partner_id', savedPartner.id);
+          
+          if (existingPayments && existingPayments.length > 0) {
+            const idsToDelete = existingPayments
+              .filter(p => p.status !== 'paid')
+              .map(p => p.id);
+            if (idsToDelete.length > 0) {
+              await supabase
+                .from('tv_payments')
+                .delete()
+                .in('id', idsToDelete);
+              await loadPayments();
+            }
+          }
+
           await loadPrizes();
         } catch (err) {
           console.error('Erro ao sincronizar prêmios mensais do parceiro:', err);
         }
       } else if (savedPartner.payment_type === 'financeiro') {
-        // Se mudou para financeiro, remove os prêmios associados apenas se nenhum foi utilizado ainda
         try {
+          // Buscar parcelas financeiras existentes
+          const { data: existingPayments } = await supabase
+            .from('tv_payments')
+            .select('id, amount, status, due_date')
+            .eq('partner_id', savedPartner.id)
+            .order('due_date', { ascending: true });
+
+          const duration = savedPartner.duration_months || 12;
+          const paymentsToInsert = [];
+          const paymentsToUpdate = [];
+
+          for (let i = 0; i < duration; i++) {
+            const baseDate = new Date((savedPartner.start_date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
+            baseDate.setMonth(baseDate.getMonth() + i);
+            const expectedDate = baseDate.toISOString().split('T')[0];
+
+            const existing = existingPayments?.[i];
+            if (existing) {
+              // Só atualiza o valor e vencimento se a parcela NÃO estiver paga
+              if (existing.status !== 'paid') {
+                paymentsToUpdate.push(
+                  supabase
+                    .from('tv_payments')
+                    .update({
+                      amount: savedPartner.monthly_price || 0,
+                      due_date: expectedDate,
+                      status: new Date(expectedDate + 'T23:59:59') < new Date() ? 'overdue' : 'pending'
+                    })
+                    .eq('id', existing.id)
+                );
+              }
+            } else {
+              // Inserir nova parcela
+              paymentsToInsert.push({
+                partner_id: savedPartner.id,
+                amount: savedPartner.monthly_price || 0,
+                due_date: expectedDate,
+                status: new Date(expectedDate + 'T23:59:59') < new Date() ? 'overdue' : 'pending'
+              });
+            }
+          }
+
+          // Executar atualizações
+          if (paymentsToUpdate.length > 0) {
+            await Promise.all(paymentsToUpdate);
+          }
+
+          // Inserir novos pagamentos
+          if (paymentsToInsert.length > 0) {
+            const { error: insertErr } = await supabase
+              .from('tv_payments')
+              .insert(paymentsToInsert);
+            if (insertErr) throw insertErr;
+          }
+
+          // Se a duração diminuiu, remover as parcelas excedentes que NÃO estejam pagas
+          if (existingPayments && existingPayments.length > duration) {
+            const extraPayments = existingPayments.slice(duration);
+            const idsToDelete = extraPayments
+              .filter(p => p.status !== 'paid')
+              .map(p => p.id);
+            if (idsToDelete.length > 0) {
+              const { error: deleteErr } = await supabase
+                .from('tv_payments')
+                .delete()
+                .in('id', idsToDelete);
+              if (deleteErr) throw deleteErr;
+            }
+          }
+
+          // Limpar prêmios de permuta se o parceiro mudou para financeiro e nenhum foi usado
           const { data: existingPrizes } = await supabase
             .from('tv_prizes')
             .select('id, quantity_used')
@@ -213,8 +328,10 @@ export function AdminDashboard() {
               await loadPrizes();
             }
           }
+
+          await loadPayments();
         } catch (err) {
-          console.error('Erro ao remover prêmios de parceiro que mudou para financeiro:', err);
+          console.error('Erro ao sincronizar parcelas financeiras:', err);
         }
       }
     }
@@ -240,6 +357,80 @@ export function AdminDashboard() {
       await loadPartners();
     } catch (err) {
       console.error('Erro ao alterar status da assinatura:', err);
+    }
+  };
+
+  // --- Handlers de Pagamentos ---
+  const handleSavePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmingPayment) return;
+
+    try {
+      const { error } = await supabase
+        .from('tv_payments')
+        .update({
+          status: 'paid',
+          payment_date: paymentForm.payment_date,
+          payment_method: paymentForm.payment_method,
+          notes: paymentForm.notes.trim() || null
+        })
+        .eq('id', confirmingPayment.id);
+      if (error) throw error;
+
+      setIsPaymentFormOpen(false);
+      setConfirmingPayment(null);
+      setPaymentForm({
+        payment_date: new Date().toISOString().split('T')[0],
+        payment_method: 'pix',
+        notes: ''
+      });
+      await loadPayments();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao confirmar pagamento.');
+    }
+  };
+
+  const handleDeletePayment = async (payment: Payment) => {
+    if (!window.confirm(`Tem certeza que deseja EXCLUIR esta parcela com vencimento em ${new Date(payment.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}?`)) return;
+    try {
+      const { error } = await supabase
+        .from('tv_payments')
+        .delete()
+        .eq('id', payment.id);
+      if (error) throw error;
+      await loadPayments();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao excluir parcela.');
+    }
+  };
+
+  const handleTogglePaymentStatus = async (payment: Payment) => {
+    if (payment.status === 'paid') {
+      if (!window.confirm('Deseja estornar/cancelar o pagamento desta parcela?')) return;
+      try {
+        const { error } = await supabase
+          .from('tv_payments')
+          .update({
+            status: new Date(payment.due_date + 'T23:59:59') < new Date() ? 'overdue' : 'pending',
+            payment_date: null,
+            payment_method: null,
+          })
+          .eq('id', payment.id);
+        if (error) throw error;
+        await loadPayments();
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setConfirmingPayment(payment);
+      setPaymentForm({
+        payment_date: new Date().toISOString().split('T')[0],
+        payment_method: 'pix',
+        notes: payment.notes || ''
+      });
+      setIsPaymentFormOpen(true);
     }
   };
 
@@ -426,6 +617,40 @@ export function AdminDashboard() {
     return prizes.filter(p => p.received_date && p.received_date.startsWith(selectedMonth));
   }, [prizes, selectedMonth]);
 
+  const availableFinanceMonths = useMemo(() => {
+    const months = new Set<string>();
+    const today = new Date();
+    months.add(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
+    
+    payments.forEach(p => {
+      if (p.due_date) {
+        const [year, month] = p.due_date.split('-');
+        months.add(`${year}-${month}`);
+      }
+    });
+    
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [payments]);
+
+  const filteredPayments = useMemo(() => {
+    return payments.filter(p => {
+      const matchMonth = selectedMonth === 'all' || (p.due_date && p.due_date.startsWith(selectedMonth));
+      
+      let matchStatus = true;
+      if (paymentStatusFilter !== 'all') {
+        matchStatus = p.status === paymentStatusFilter;
+      }
+      
+      const q = searchQuery.toLowerCase();
+      const matchSearch = !q ||
+        (p.tv_partners?.company_name || '').toLowerCase().includes(q) ||
+        p.amount.toString().includes(q) ||
+        (p.notes || '').toLowerCase().includes(q);
+        
+      return matchMonth && matchStatus && matchSearch;
+    });
+  }, [payments, selectedMonth, paymentStatusFilter, searchQuery]);
+
   const formatCurrency = (v: number) =>
     v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -477,8 +702,9 @@ export function AdminDashboard() {
       <div style={{ display: 'flex', borderBottom: '1px solid #27272a', gap: '8px', marginBottom: '24px' }}>
         {[
           { id: 'partners', label: 'Parceiros' },
-          { id: 'plans', label: 'Planos de Anúncio' },
-          { id: 'prizes', label: 'Estoque de Prêmios' }
+          { id: 'finance', label: 'Controle Financeiro' },
+          { id: 'prizes', label: 'Estoque de Prêmios' },
+          { id: 'plans', label: 'Planos de Anúncio' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -707,7 +933,180 @@ export function AdminDashboard() {
         </>
       )}
 
-      {/* ────────────────── ABA 2: PLANOS DE ANÚNCIO ────────────────── */}
+      {/* ────────────────── ABA 2: CONTROLE FINANCEIRO ────────────────── */}
+      {activeTab === 'finance' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '24px', alignItems: 'start' }}>
+          
+          {/* Tabela de Mensalidades */}
+          <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '16px', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f4f4f5' }}>Controle de Mensalidades Financeiras</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                
+                {/* Filtro por Mês de Vencimento */}
+                <select
+                  value={selectedMonth}
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  style={{ background: '#09090b', border: '1px solid #27272a', borderRadius: '8px', padding: '6px 12px', color: '#f4f4f5', fontSize: '0.75rem', outline: 'none', cursor: 'pointer' }}
+                >
+                  <option value="all">Todos os Meses</option>
+                  {availableFinanceMonths.map(m => {
+                    const [year, month] = m.split('-');
+                    const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                    const label = date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+                    return <option key={m} value={m}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>;
+                  })}
+                </select>
+
+                {/* Filtro por Status do Pagamento */}
+                <select
+                  value={paymentStatusFilter}
+                  onChange={e => setPaymentStatusFilter(e.target.value)}
+                  style={{ background: '#09090b', border: '1px solid #27272a', borderRadius: '8px', padding: '6px 12px', color: '#f4f4f5', fontSize: '0.75rem', outline: 'none', cursor: 'pointer' }}
+                >
+                  <option value="all">Todos os Status</option>
+                  <option value="pending">Pendente</option>
+                  <option value="paid">Pago</option>
+                  <option value="overdue">Atrasado</option>
+                </select>
+
+              </div>
+            </div>
+
+            {payments.length === 0 ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: '#52525b', fontSize: '0.8rem' }}>
+                Nenhuma mensalidade financeira registrada.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #27272a' }}>
+                      {['Parceiro', 'Valor', 'Vencimento', 'Pagamento', 'Status', 'Meio', 'Ações'].map(h => (
+                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPayments.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#52525b' }}>
+                          Nenhuma mensalidade encontrada para os filtros selecionados.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredPayments.map(p => {
+                        const isOverdue = p.status === 'overdue';
+                        const isPaid = p.status === 'paid';
+                        
+                        return (
+                          <tr key={p.id} style={{ borderBottom: '1px solid #1c1c1f' }}>
+                            <td style={{ padding: '12px 16px', fontWeight: 600, color: '#f4f4f5' }}>
+                              {p.tv_partners?.company_name || 'Parceiro Desconhecido'}
+                            </td>
+                            <td style={{ padding: '12px 16px', fontWeight: 750, color: '#f4f4f5' }}>
+                              {formatCurrency(p.amount)}
+                            </td>
+                            <td style={{ padding: '12px 16px', color: '#d4d4d8' }}>
+                              {new Date(p.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                            </td>
+                            <td style={{ padding: '12px 16px', color: '#71717a' }}>
+                              {p.payment_date ? new Date(p.payment_date + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
+                            </td>
+                            <td style={{ padding: '12px 16px' }}>
+                              <button
+                                onClick={() => handleTogglePaymentStatus(p)}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 800, border: 'none', cursor: 'pointer',
+                                  background: isPaid ? 'rgba(34,197,94,0.1)' : isOverdue ? 'rgba(239,68,68,0.1)' : 'rgba(250,204,21,0.1)',
+                                  color: isPaid ? '#4ade80' : isOverdue ? '#f87171' : '#facc15'
+                                }}
+                                title={isPaid ? "Clique para reverter para Pendente" : "Clique para registrar pagamento"}
+                              >
+                                {isPaid ? 'Pago' : isOverdue ? 'Atrasado' : 'Pendente'}
+                              </button>
+                            </td>
+                            <td style={{ padding: '12px 16px', color: '#a1a1aa', textTransform: 'uppercase', fontSize: '0.7rem', fontWeight: 650 }}>
+                              {p.payment_method || '-'}
+                            </td>
+                            <td style={{ padding: '12px 16px', width: '60px' }}>
+                              <button
+                                onClick={() => handleDeletePayment(p)}
+                                style={{ padding: '4px', background: 'none', border: 'none', color: '#71717a', cursor: 'pointer' }}
+                                title="Excluir Parcela"
+                              >
+                                <Trash size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Painel lateral de Confirmação de Pagamento */}
+          {isPaymentFormOpen && confirmingPayment ? (
+            <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '16px', padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f4f4f5' }}>
+                  Confirmar Pagamento
+                </h4>
+                <button onClick={() => { setIsPaymentFormOpen(false); setConfirmingPayment(null); }} style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer' }}>
+                  <XCircle size={16} />
+                </button>
+              </div>
+
+              <div style={{ marginBottom: '14px', background: 'rgba(200,169,126,0.03)', border: '1px solid rgba(200,169,126,0.1)', padding: '12px', borderRadius: '10px' }}>
+                <p style={{ fontSize: '0.65rem', color: '#a1a1aa', textTransform: 'uppercase', margin: 0 }}>Empresa</p>
+                <p style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 700, margin: '2px 0 6px 0' }}>{confirmingPayment.tv_partners?.company_name}</p>
+                <p style={{ fontSize: '0.65rem', color: '#a1a1aa', textTransform: 'uppercase', margin: 0 }}>Valor da Parcela</p>
+                <p style={{ fontSize: '1rem', color: 'var(--brand)', fontWeight: 800, margin: '2px 0 0 0' }}>{formatCurrency(confirmingPayment.amount)}</p>
+              </div>
+
+              <form onSubmit={handleSavePayment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={labelStyle}>Data do Pagamento *</label>
+                  <input required type="date" style={inputStyle} value={paymentForm.payment_date} onChange={e => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Meio de Pagamento *</label>
+                  <select required style={{ ...inputStyle, cursor: 'pointer' }} value={paymentForm.payment_method} onChange={e => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
+                    <option value="pix">PIX</option>
+                    <option value="cartão de crédito">Cartão de Crédito</option>
+                    <option value="boleto">Boleto Bancário</option>
+                    <option value="dinheiro">Dinheiro</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Observações</label>
+                  <textarea style={{ ...inputStyle, resize: 'none', height: '60px' }} value={paymentForm.notes} onChange={e => setPaymentForm({ ...paymentForm, notes: e.target.value })} placeholder="Ex: Comprovante enviado via WhatsApp..." />
+                </div>
+
+                <button
+                  type="submit"
+                  style={{ background: '#22c55e', color: 'white', border: 'none', padding: '10px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', marginTop: '4px', boxShadow: '0 4px 12px rgba(34,197,94,0.15)' }}
+                >
+                  Registrar Recebimento
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div style={{ background: 'rgba(24,24,27,0.3)', border: '1px dashed #27272a', borderRadius: '16px', padding: '32px 20px', textAlign: 'center', color: '#52525b', fontSize: '0.75rem' }}>
+              <Calendar size={24} style={{ margin: '0 auto 8px', color: '#3f3f46' }} />
+              Selecione "Pendente" ou "Atrasado" na tabela para registrar um recebimento.
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ────────────────── ABA 3: PLANOS DE ANÚNCIO ────────────────── */}
       {activeTab === 'plans' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '24px', alignItems: 'start' }}>
           

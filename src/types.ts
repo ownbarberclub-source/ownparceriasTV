@@ -53,3 +53,19 @@ export interface Prize {
     company_name: string;
   };
 }
+
+export interface Payment {
+  id: string;
+  partner_id: string;
+  amount: number;
+  due_date: string;
+  payment_date: string | null;
+  status: 'paid' | 'pending' | 'overdue';
+  payment_method: string | null;
+  notes: string | null;
+  created_at: string;
+  // Relacionamento (Join)
+  tv_partners?: {
+    company_name: string;
+  };
+}

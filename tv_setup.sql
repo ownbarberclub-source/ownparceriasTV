@@ -86,3 +86,27 @@ CREATE POLICY "Delete Todos - Premios" ON tv_prizes FOR DELETE USING (true);
 
 -- Adicionar coluna last_used_date se não existir
 ALTER TABLE tv_prizes ADD COLUMN IF NOT EXISTS last_used_date DATE;
+
+-- 4. Criar Tabela de Controle de Pagamentos (Financeiro)
+CREATE TABLE IF NOT EXISTS tv_payments (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  partner_id UUID REFERENCES tv_partners(id) ON DELETE CASCADE,
+  amount NUMERIC NOT NULL,
+  due_date DATE NOT NULL,
+  payment_date DATE,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('paid', 'pending', 'overdue')),
+  payment_method TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Habilitar RLS e políticas para Pagamentos
+ALTER TABLE tv_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Leitura Todos - Pagamentos" ON tv_payments;
+DROP POLICY IF EXISTS "Insert Todos - Pagamentos" ON tv_payments;
+DROP POLICY IF EXISTS "Update Todos - Pagamentos" ON tv_payments;
+DROP POLICY IF EXISTS "Delete Todos - Pagamentos" ON tv_payments;
+CREATE POLICY "Leitura Todos - Pagamentos" ON tv_payments FOR SELECT USING (true);
+CREATE POLICY "Insert Todos - Pagamentos" ON tv_payments FOR INSERT WITH CHECK (true);
+CREATE POLICY "Update Todos - Pagamentos" ON tv_payments FOR UPDATE USING (true);
+CREATE POLICY "Delete Todos - Pagamentos" ON tv_payments FOR DELETE USING (true);
