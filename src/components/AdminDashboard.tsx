@@ -41,6 +41,7 @@ export function AdminDashboard() {
     quantity_received: 1,
     quantity_used: 0,
     received_date: new Date().toISOString().split('T')[0],
+    last_used_date: '',
     notes: ''
   });
 
@@ -97,19 +98,81 @@ export function AdminDashboard() {
 
   // --- Handlers de Parceiro ---
   const handleSavePartner = async (formData: Partial<Partner>) => {
+    let savedPartner: Partner | null = null;
     if (editPartner) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tv_partners')
         .update(formData)
-        .eq('id', editPartner.id);
+        .eq('id', editPartner.id)
+        .select();
       if (error) throw error;
+      savedPartner = data?.[0] || null;
     } else {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tv_partners')
-        .insert([formData]);
+        .insert([formData])
+        .select();
       if (error) throw error;
+      savedPartner = data?.[0] || null;
     }
     await loadPartners();
+
+    // Sincronizar automaticamente os prêmios se for permuta
+    if (savedPartner) {
+      if (savedPartner.payment_type === 'permuta' && savedPartner.barter_product_description) {
+        try {
+          const { data: existingPrizes } = await supabase
+            .from('tv_prizes')
+            .select('id, quantity_received, quantity_used')
+            .eq('partner_id', savedPartner.id);
+
+          if (existingPrizes && existingPrizes.length > 0) {
+            // Já existe prêmio cadastrado para o parceiro, atualiza a descrição e a quantidade recebida
+            const firstPrize = existingPrizes[0];
+            await supabase
+              .from('tv_prizes')
+              .update({
+                description: savedPartner.barter_product_description,
+                quantity_received: savedPartner.barter_product_quantity || 1,
+              })
+              .eq('id', firstPrize.id);
+          } else {
+            // Não existe prêmio cadastrado, cria um novo
+            await supabase.from('tv_prizes').insert([{
+              partner_id: savedPartner.id,
+              description: savedPartner.barter_product_description,
+              quantity_received: savedPartner.barter_product_quantity || 1,
+              quantity_used: 0,
+              received_date: savedPartner.start_date || new Date().toISOString().split('T')[0],
+            }]);
+          }
+          await loadPrizes();
+        } catch (err) {
+          console.error('Erro ao sincronizar prêmios do parceiro:', err);
+        }
+      } else if (savedPartner.payment_type === 'financeiro') {
+        // Se mudou para financeiro, remove os prêmios associados apenas se nenhum foi utilizado ainda
+        try {
+          const { data: existingPrizes } = await supabase
+            .from('tv_prizes')
+            .select('id, quantity_used')
+            .eq('partner_id', savedPartner.id);
+
+          if (existingPrizes && existingPrizes.length > 0) {
+            const canDelete = existingPrizes.every(p => p.quantity_used === 0);
+            if (canDelete) {
+              await supabase
+                .from('tv_prizes')
+                .delete()
+                .eq('partner_id', savedPartner.id);
+              await loadPrizes();
+            }
+          }
+        } catch (err) {
+          console.error('Erro ao remover prêmios de parceiro que mudou para financeiro:', err);
+        }
+      }
+    }
   };
 
   const handleDeletePartner = async (partner: Partner) => {
@@ -195,6 +258,7 @@ export function AdminDashboard() {
         quantity_received: prizeForm.quantity_received,
         quantity_used: prizeForm.quantity_used,
         received_date: prizeForm.received_date,
+        last_used_date: prizeForm.last_used_date || null,
         notes: prizeForm.notes.trim() || null
       };
 
@@ -218,6 +282,7 @@ export function AdminDashboard() {
         quantity_received: 1,
         quantity_used: 0,
         received_date: new Date().toISOString().split('T')[0],
+        last_used_date: '',
         notes: ''
       });
       await loadPrizes();
@@ -229,10 +294,17 @@ export function AdminDashboard() {
 
   const handleAdjustPrizeStock = async (prize: Prize, change: number) => {
     const nextUsed = Math.max(0, Math.min(prize.quantity_received, prize.quantity_used + change));
+    const updateData: { quantity_used: number; last_used_date?: string | null } = { quantity_used: nextUsed };
+    
+    // Se a quantidade utilizada aumentou, registra a data de hoje como último uso
+    if (change > 0 && nextUsed > prize.quantity_used) {
+      updateData.last_used_date = new Date().toISOString().split('T')[0];
+    }
+
     try {
       const { error } = await supabase
         .from('tv_prizes')
-        .update({ quantity_used: nextUsed })
+        .update(updateData)
         .eq('id', prize.id);
       if (error) throw error;
       await loadPrizes();
@@ -710,32 +782,33 @@ export function AdminDashboard() {
                     return;
                   }
                   setEditPrize(null);
-                  setPrizeForm({
-                    partner_id: partners[0].id,
-                    description: '',
-                    quantity_received: 1,
-                    quantity_used: 0,
-                    received_date: new Date().toISOString().split('T')[0],
-                    notes: ''
-                  });
-                  setIsPrizeFormOpen(true);
-                }}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--brand)', color: 'white', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}
-              >
-                <Plus size={12} /> Registrar Doação
-              </button>
-            </div>
-
-            {prizes.length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: '#52525b', fontSize: '0.8rem' }}>
-                Nenhum prêmio registrado até o momento.
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #27272a' }}>
-                      {['Parceiro Doador', 'Descrição do Prêmio', 'Recebidos', 'Utilizados', 'Saldo Restante', 'Recebimento', 'Ações'].map(h => (
+                   setPrizeForm({
+                     partner_id: partners[0].id,
+                     description: '',
+                     quantity_received: 1,
+                     quantity_used: 0,
+                     received_date: new Date().toISOString().split('T')[0],
+                     last_used_date: '',
+                     notes: ''
+                   });
+                   setIsPrizeFormOpen(true);
+                 }}
+                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--brand)', color: 'white', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}
+               >
+                 <Plus size={12} /> Registrar Doação
+               </button>
+             </div>
+ 
+             {prizes.length === 0 ? (
+               <div style={{ padding: '32px', textAlign: 'center', color: '#52525b', fontSize: '0.8rem' }}>
+                 Nenhum prêmio registrado até o momento.
+               </div>
+             ) : (
+               <div style={{ overflowX: 'auto' }}>
+                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                   <thead>
+                     <tr style={{ borderBottom: '1px solid #27272a' }}>
+                       {['Parceiro Doador', 'Descrição do Prêmio', 'Recebidos', 'Utilizados', 'Saldo Restante', 'Recebimento', 'Data de Uso', 'Ações'].map(h => (
                         <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           {h}
                         </th>
@@ -789,24 +862,28 @@ export function AdminDashboard() {
                               {balance} un disponível
                             </span>
                           </td>
-                          <td style={{ padding: '12px 16px', color: '#71717a' }}>
-                            {new Date(p.received_date + 'T12:00:00').toLocaleDateString('pt-BR')}
-                          </td>
-                          <td style={{ padding: '12px 16px', width: '80px' }}>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <button
-                                onClick={() => {
-                                  setEditPrize(p);
-                                  setPrizeForm({
-                                    partner_id: p.partner_id,
-                                    description: p.description,
-                                    quantity_received: p.quantity_received,
-                                    quantity_used: p.quantity_used,
-                                    received_date: p.received_date,
-                                    notes: p.notes || ''
-                                  });
-                                  setIsPrizeFormOpen(true);
-                                }}
+                           <td style={{ padding: '12px 16px', color: '#71717a' }}>
+                             {new Date(p.received_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                           </td>
+                           <td style={{ padding: '12px 16px', color: '#71717a' }}>
+                             {p.last_used_date ? new Date(p.last_used_date + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
+                           </td>
+                           <td style={{ padding: '12px 16px', width: '80px' }}>
+                             <div style={{ display: 'flex', gap: '4px' }}>
+                               <button
+                                 onClick={() => {
+                                   setEditPrize(p);
+                                   setPrizeForm({
+                                     partner_id: p.partner_id,
+                                     description: p.description,
+                                     quantity_received: p.quantity_received,
+                                     quantity_used: p.quantity_used,
+                                     received_date: p.received_date,
+                                     last_used_date: p.last_used_date || '',
+                                     notes: p.notes || ''
+                                   });
+                                   setIsPrizeFormOpen(true);
+                                 }}
                                 style={{ padding: '4px', background: 'none', border: 'none', color: '#71717a', cursor: 'pointer' }}
                                 title="Editar Doação"
                               >
@@ -863,10 +940,14 @@ export function AdminDashboard() {
                     <input required type="number" min="0" max={prizeForm.quantity_received} style={inputStyle} value={prizeForm.quantity_used} onChange={e => setPrizeForm({ ...prizeForm, quantity_used: parseInt(e.target.value) || 0 })} />
                   </div>
                 </div>
-                <div>
-                  <label style={labelStyle}>Data de Recebimento *</label>
-                  <input required type="date" style={inputStyle} value={prizeForm.received_date} onChange={e => setPrizeForm({ ...prizeForm, received_date: e.target.value })} />
-                </div>
+                 <div>
+                   <label style={labelStyle}>Data de Recebimento *</label>
+                   <input required type="date" style={inputStyle} value={prizeForm.received_date} onChange={e => setPrizeForm({ ...prizeForm, received_date: e.target.value })} />
+                 </div>
+                 <div>
+                   <label style={labelStyle}>Data do Último Uso</label>
+                   <input type="date" style={inputStyle} value={prizeForm.last_used_date} onChange={e => setPrizeForm({ ...prizeForm, last_used_date: e.target.value })} />
+                 </div>
                 <div>
                   <label style={labelStyle}>Notas / Regras</label>
                   <textarea style={{ ...inputStyle, resize: 'none', height: '60px' }} value={prizeForm.notes} onChange={e => setPrizeForm({ ...prizeForm, notes: e.target.value })} placeholder="Ex: Sorteio de final de ano..." />

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS tv_prizes (
   quantity_received INT DEFAULT 1,
   quantity_used INT DEFAULT 0,
   received_date DATE DEFAULT CURRENT_DATE,
+  last_used_date DATE,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -82,3 +83,6 @@ CREATE POLICY "Leitura Todos - Premios" ON tv_prizes FOR SELECT USING (true);
 CREATE POLICY "Insert Todos - Premios" ON tv_prizes FOR INSERT WITH CHECK (true);
 CREATE POLICY "Update Todos - Premios" ON tv_prizes FOR UPDATE USING (true);
 CREATE POLICY "Delete Todos - Premios" ON tv_prizes FOR DELETE USING (true);
+
+-- Adicionar coluna last_used_date se não existir
+ALTER TABLE tv_prizes ADD COLUMN IF NOT EXISTS last_used_date DATE;

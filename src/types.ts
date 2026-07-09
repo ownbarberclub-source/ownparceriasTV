@@ -45,6 +45,7 @@ export interface Prize {
   quantity_received: number;
   quantity_used: number;
   received_date: string;
+  last_used_date: string | null;
   notes: string | null;
   created_at: string;
   // Relacionamento (Join)
