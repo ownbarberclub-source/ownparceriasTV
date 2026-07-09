@@ -22,7 +22,8 @@ export default function App() {
       // 1. Autenticação por relay de senha
       if (hubUser && hubPass) {
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({ email: hubUser, password: hubPass });
+          const decryptedPass = atob(hubPass);
+          const { data, error } = await supabase.auth.signInWithPassword({ email: hubUser, password: decryptedPass });
           if (!error && data.user) {
             const { data: profile } = await supabase.from('hub_profiles').select('*').eq('id', data.user.id).single();
             if (profile && profile.is_active !== false) {
