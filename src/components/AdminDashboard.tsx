@@ -44,6 +44,7 @@ export function AdminDashboard() {
   const [paymentForm, setPaymentForm] = useState({
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'cartão de crédito',
+    amount: 0,
     notes: ''
   });
 
@@ -149,9 +150,13 @@ export function AdminDashboard() {
 
     // Sincronizar automaticamente os prêmios ou parcelas financeiras
     if (savedPartner) {
-      if (savedPartner.payment_type === 'permuta' && savedPartner.barter_product_description) {
+      const isPermuta = savedPartner.payment_type === 'permuta';
+      const isFinanceiro = savedPartner.payment_type === 'financeiro';
+      const isMisto = savedPartner.payment_type === 'misto';
+
+      // 1. Sincronizar Prêmios (Permuta ou Misto)
+      if ((isPermuta || isMisto) && savedPartner.barter_product_description) {
         try {
-          // Buscar todos os prêmios existentes para esse parceiro, ordenados pela data de recebimento
           const { data: existingPrizes } = await supabase
             .from('tv_prizes')
             .select('id, quantity_received, quantity_used, received_date')
@@ -163,14 +168,12 @@ export function AdminDashboard() {
           const prizesToUpdate = [];
 
           for (let i = 0; i < duration; i++) {
-            // Calcular data esperada para o mês i
             const baseDate = new Date((savedPartner.start_date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
             baseDate.setMonth(baseDate.getMonth() + i);
             const expectedDate = baseDate.toISOString().split('T')[0];
 
             const existing = existingPrizes?.[i];
             if (existing) {
-              // Atualizar prêmio existente mantendo quantity_used e last_used_date intactos
               prizesToUpdate.push(
                 supabase
                   .from('tv_prizes')
@@ -182,7 +185,6 @@ export function AdminDashboard() {
                   .eq('id', existing.id)
               );
             } else {
-              // Inserir novo prêmio para este mês
               prizesToInsert.push({
                 partner_id: savedPartner.id,
                 description: savedPartner.barter_product_description,
@@ -193,12 +195,10 @@ export function AdminDashboard() {
             }
           }
 
-          // Executar atualizações
           if (prizesToUpdate.length > 0) {
             await Promise.all(prizesToUpdate);
           }
 
-          // Inserir novos registros
           if (prizesToInsert.length > 0) {
             const { error: insertErr } = await supabase
               .from('tv_prizes')
@@ -206,7 +206,6 @@ export function AdminDashboard() {
             if (insertErr) throw insertErr;
           }
 
-          // Se a duração do contrato diminuiu, remover os prêmios extras/excedentes
           if (existingPrizes && existingPrizes.length > duration) {
             const extraPrizes = existingPrizes.slice(duration);
             const idsToDelete = extraPrizes.map(p => p.id);
@@ -217,22 +216,24 @@ export function AdminDashboard() {
             if (deleteErr) throw deleteErr;
           }
 
-          // Limpar parcelas financeiras não pagas se mudou para permuta
-          const { data: existingPayments } = await supabase
-            .from('tv_payments')
-            .select('id, status')
-            .eq('partner_id', savedPartner.id);
-          
-          if (existingPayments && existingPayments.length > 0) {
-            const idsToDelete = existingPayments
-              .filter(p => p.status !== 'paid')
-              .map(p => p.id);
-            if (idsToDelete.length > 0) {
-              await supabase
-                .from('tv_payments')
-                .delete()
-                .in('id', idsToDelete);
-              await loadPayments();
+          // Se for permuta pura, limpar parcelas financeiras não pagas
+          if (isPermuta) {
+            const { data: existingPayments } = await supabase
+              .from('tv_payments')
+              .select('id, status')
+              .eq('partner_id', savedPartner.id);
+            
+            if (existingPayments && existingPayments.length > 0) {
+              const idsToDelete = existingPayments
+                .filter(p => p.status !== 'paid')
+                .map(p => p.id);
+              if (idsToDelete.length > 0) {
+                await supabase
+                  .from('tv_payments')
+                  .delete()
+                  .in('id', idsToDelete);
+                await loadPayments();
+              }
             }
           }
 
@@ -240,9 +241,11 @@ export function AdminDashboard() {
         } catch (err) {
           console.error('Erro ao sincronizar prêmios mensais do parceiro:', err);
         }
-      } else if (savedPartner.payment_type === 'financeiro') {
+      }
+
+      // 2. Sincronizar Parcelas Financeiras (Financeiro ou Misto)
+      if (isFinanceiro || isMisto) {
         try {
-          // Buscar parcelas financeiras existentes
           const { data: existingPayments } = await supabase
             .from('tv_payments')
             .select('id, amount, status, due_date')
@@ -260,7 +263,6 @@ export function AdminDashboard() {
 
             const existing = existingPayments?.[i];
             if (existing) {
-              // Só atualiza o valor e vencimento se a parcela NÃO estiver paga
               if (existing.status !== 'paid') {
                 paymentsToUpdate.push(
                   supabase
@@ -274,7 +276,6 @@ export function AdminDashboard() {
                 );
               }
             } else {
-              // Inserir nova parcela
               paymentsToInsert.push({
                 partner_id: savedPartner.id,
                 amount: savedPartner.monthly_price || 0,
@@ -284,12 +285,10 @@ export function AdminDashboard() {
             }
           }
 
-          // Executar atualizações
           if (paymentsToUpdate.length > 0) {
             await Promise.all(paymentsToUpdate);
           }
 
-          // Inserir novos pagamentos
           if (paymentsToInsert.length > 0) {
             const { error: insertErr } = await supabase
               .from('tv_payments')
@@ -297,7 +296,6 @@ export function AdminDashboard() {
             if (insertErr) throw insertErr;
           }
 
-          // Se a duração diminuiu, remover as parcelas excedentes que NÃO estejam pagas
           if (existingPayments && existingPayments.length > duration) {
             const extraPayments = existingPayments.slice(duration);
             const idsToDelete = extraPayments
@@ -312,20 +310,22 @@ export function AdminDashboard() {
             }
           }
 
-          // Limpar prêmios de permuta se o parceiro mudou para financeiro e nenhum foi usado
-          const { data: existingPrizes } = await supabase
-            .from('tv_prizes')
-            .select('id, quantity_used')
-            .eq('partner_id', savedPartner.id);
+          // Se for financeiro puro, limpar prêmios de permuta não usados
+          if (isFinanceiro) {
+            const { data: existingPrizes } = await supabase
+              .from('tv_prizes')
+              .select('id, quantity_used')
+              .eq('partner_id', savedPartner.id);
 
-          if (existingPrizes && existingPrizes.length > 0) {
-            const canDelete = existingPrizes.every(p => p.quantity_used === 0);
-            if (canDelete) {
-              await supabase
-                .from('tv_prizes')
-                .delete()
-                .eq('partner_id', savedPartner.id);
-              await loadPrizes();
+            if (existingPrizes && existingPrizes.length > 0) {
+              const canDelete = existingPrizes.every(p => p.quantity_used === 0);
+              if (canDelete) {
+                await supabase
+                  .from('tv_prizes')
+                  .delete()
+                  .eq('partner_id', savedPartner.id);
+                await loadPrizes();
+              }
             }
           }
 
@@ -370,6 +370,7 @@ export function AdminDashboard() {
         .from('tv_payments')
         .update({
           status: 'paid',
+          amount: paymentForm.amount,
           payment_date: paymentForm.payment_date,
           payment_method: paymentForm.payment_method,
           notes: paymentForm.notes.trim() || null
@@ -382,6 +383,7 @@ export function AdminDashboard() {
       setPaymentForm({
         payment_date: new Date().toISOString().split('T')[0],
         payment_method: 'cartão de crédito',
+        amount: 0,
         notes: ''
       });
       await loadPayments();
@@ -428,6 +430,7 @@ export function AdminDashboard() {
       setPaymentForm({
         payment_date: new Date().toISOString().split('T')[0],
         payment_method: 'cartão de crédito',
+        amount: payment.amount,
         notes: payment.notes || ''
       });
       setIsPaymentFormOpen(true);
@@ -1081,6 +1084,10 @@ export function AdminDashboard() {
                 <div>
                   <label style={labelStyle}>Data do Pagamento *</label>
                   <input required type="date" style={inputStyle} value={paymentForm.payment_date} onChange={e => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Valor Recebido em Dinheiro (R$) *</label>
+                  <input required type="number" min="0" step="0.01" style={inputStyle} value={paymentForm.amount} onChange={e => setPaymentForm({ ...paymentForm, amount: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div>
                   <label style={labelStyle}>Meio de Pagamento</label>

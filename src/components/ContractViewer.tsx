@@ -25,13 +25,17 @@ export function ContractViewer({ partner, planDescription, onClose }: ContractVi
   };
 
   const getContractText = () => {
-    const clause2 = partner.payment_type === 'permuta'
-      ? `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}" na modalidade de PERMUTA comercial, comprometendo-se a fornecer mensalmente à CONTRATANTE ${partner.barter_product_quantity} unidades do produto/serviço "${partner.barter_product_description}", correspondendo ao valor estimado de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}) por mês.${planDescription ? `\nEspecificações do plano: ${planDescription}` : ''}`
-      : `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}", com valor mensal de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}).${planDescription ? `\nEspecificações do plano: ${planDescription}` : ''}`;
+    const clause2 = partner.payment_type === 'misto'
+      ? `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}" na modalidade MISTA, comprometendo-se a efetuar o pagamento mensal em dinheiro de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}) e fornecer mensalmente à CONTRATANTE ${partner.barter_product_quantity} unidades do produto/serviço "${partner.barter_product_description}", correspondendo ao valor de permuta de ${formatCurrency(partner.barter_value || 0)} (${valorExtenso(partner.barter_value || 0)}) por mês, totalizando a contraprestação mensal de ${formatCurrency(partner.monthly_price + (partner.barter_value || 0))} (${valorExtenso(partner.monthly_price + (partner.barter_value || 0))}).${planDescription ? `\nEspecificações do plano: ${planDescription}` : ''}`
+      : partner.payment_type === 'permuta'
+        ? `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}" na modalidade de PERMUTA comercial, comprometendo-se a fornecer mensalmente à CONTRATANTE ${partner.barter_product_quantity} unidades do produto/serviço "${partner.barter_product_description}", correspondendo ao valor estimado de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}) por mês.${planDescription ? `\nEspecificações do plano: ${planDescription}` : ''}`
+        : `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}", com valor mensal de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}).${planDescription ? `\nEspecificações do plano: ${planDescription}` : ''}`;
 
-    const clause6 = partner.payment_type === 'permuta'
-      ? `A contraprestação dar-se-á através da entrega mensal dos produtos/serviços detalhados na Cláusula 2ª na sede da CONTRATANTE, devendo ser entregues em perfeitas condições de uso.`
-      : `O pagamento das mensalidades da assinatura deverá ser efetuado mensalmente via cartão de crédito através da plataforma ASAAS, mediante link de pagamento disponibilizado pela CONTRATANTE.`;
+    const clause6 = partner.payment_type === 'misto'
+      ? `O pagamento da mensalidade de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}) da assinatura deverá ser efetuado mensalmente via cartão de crédito através da plataforma ASAAS, mediante link de pagamento disponibilizado pela CONTRATANTE, e a contraprestação em permuta dar-se-á através da entrega mensal dos produtos/serviços detalhados na Cláusula 2ª na sede da CONTRATANTE.`
+      : partner.payment_type === 'permuta'
+        ? `A contraprestação dar-se-á através da entrega mensal dos produtos/serviços detalhados na Cláusula 2ª na sede da CONTRATANTE.`
+        : `O pagamento das mensalidades da assinatura deverá ser efetuado mensalmente via cartão de crédito através da plataforma ASAAS, mediante link de pagamento disponibilizado pela CONTRATANTE.`;
 
     return `
 TERMO DE PARCERIA COMERCIAL - OWN BARBER CLUB
