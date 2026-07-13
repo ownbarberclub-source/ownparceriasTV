@@ -30,7 +30,6 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
     payment_type: 'financeiro' as 'financeiro' | 'permuta' | 'misto',
     barter_product_description: '',
     barter_product_quantity: 0,
-    barter_value: 0,
   });
   const [saving, setSaving] = useState(false);
 
@@ -72,7 +71,6 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
         payment_type: partner.payment_type || 'financeiro',
         barter_product_description: partner.barter_product_description || '',
         barter_product_quantity: partner.barter_product_quantity || 0,
-        barter_value: partner.barter_value || 0,
       });
     }
   }, [partner]);
@@ -107,9 +105,8 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
         ...form,
         trade_name: form.trade_name.trim() || null,
         drive_link: form.drive_link.trim() || null,
-        barter_product_description: (form.payment_type === 'permuta' || form.payment_type === 'misto') ? form.barter_product_description.trim() || null : null,
-        barter_product_quantity: (form.payment_type === 'permuta' || form.payment_type === 'misto') ? form.barter_product_quantity : 0,
-        barter_value: form.payment_type === 'misto' ? form.barter_value : 0,
+        barter_product_description: form.payment_type === 'permuta' ? form.barter_product_description.trim() || null : null,
+        barter_product_quantity: form.payment_type === 'permuta' ? form.barter_product_quantity : 0,
       };
       await onSave(payload);
       onClose();
@@ -222,22 +219,12 @@ export function PartnerForm({ partner, onClose, onSave }: PartnerFormProps) {
             {/* Valor Mensal */}
             <div>
               <label style={labelStyle}>
-                {form.payment_type === 'misto'
-                  ? 'Valor Mensal em Dinheiro (R$) *'
-                  : form.payment_type === 'permuta'
-                    ? 'Valor Estimado Mensal (R$) *'
-                    : 'Valor Mensal da Assinatura (R$) *'}
+                {form.payment_type === 'permuta'
+                  ? 'Valor Estimado Mensal (R$) *'
+                  : 'Valor Mensal da Assinatura (R$) *'}
               </label>
               <input required type="number" min="0" step="0.01" style={inputStyle} value={form.monthly_price} onChange={e => setForm({ ...form, monthly_price: parseFloat(e.target.value) || 0 })} />
             </div>
-
-            {/* Valor da Permuta (Apenas Misto) */}
-            {form.payment_type === 'misto' && (
-              <div>
-                <label style={labelStyle}>Valor Mensal em Permuta (R$) *</label>
-                <input required type="number" min="0" step="0.01" style={inputStyle} value={form.barter_value} onChange={e => setForm({ ...form, barter_value: parseFloat(e.target.value) || 0 })} />
-              </div>
-            )}
 
             {/* Data de Início */}
             <div>

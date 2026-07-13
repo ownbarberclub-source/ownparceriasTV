@@ -20,7 +20,6 @@ export interface Partner {
   payment_type: 'financeiro' | 'permuta' | 'misto';
   barter_product_description: string | null;
   barter_product_quantity: number;
-  barter_value?: number;
 }
 
 export interface User {

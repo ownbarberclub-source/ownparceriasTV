@@ -45,6 +45,9 @@ export function AdminDashboard() {
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'cartão de crédito',
     amount: 0,
+    barter_value: 0,
+    barter_description: '',
+    barter_quantity: 1,
     notes: ''
   });
 
@@ -154,8 +157,8 @@ export function AdminDashboard() {
       const isFinanceiro = savedPartner.payment_type === 'financeiro';
       const isMisto = savedPartner.payment_type === 'misto';
 
-      // 1. Sincronizar Prêmios (Permuta ou Misto)
-      if ((isPermuta || isMisto) && savedPartner.barter_product_description) {
+      // 1. Sincronizar Prêmios (Apenas Permuta)
+      if (isPermuta && savedPartner.barter_product_description) {
         try {
           const { data: existingPrizes } = await supabase
             .from('tv_prizes')
@@ -366,6 +369,26 @@ export function AdminDashboard() {
     if (!confirmingPayment) return;
 
     try {
+      let finalNotes = paymentForm.notes.trim() || null;
+      if (paymentForm.barter_value > 0) {
+        const barterText = `[Abatido ${formatCurrency(paymentForm.barter_value)} em permuta de ${paymentForm.barter_description} (${paymentForm.barter_quantity}x)]`;
+        finalNotes = finalNotes ? `${finalNotes}\n${barterText}` : barterText;
+
+        // Inserir prêmio no estoque
+        const { error: prizeErr } = await supabase
+          .from('tv_prizes')
+          .insert([{
+            partner_id: confirmingPayment.partner_id,
+            description: paymentForm.barter_description,
+            quantity_received: paymentForm.barter_quantity,
+            quantity_used: 0,
+            received_date: paymentForm.payment_date,
+            notes: `Abatimento automático da parcela com vencimento em ${new Date(confirmingPayment.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}. Valor estimado: ${formatCurrency(paymentForm.barter_value)}`
+          }]);
+        if (prizeErr) throw prizeErr;
+        await loadPrizes();
+      }
+
       const { error } = await supabase
         .from('tv_payments')
         .update({
@@ -373,7 +396,7 @@ export function AdminDashboard() {
           amount: paymentForm.amount,
           payment_date: paymentForm.payment_date,
           payment_method: paymentForm.payment_method,
-          notes: paymentForm.notes.trim() || null
+          notes: finalNotes
         })
         .eq('id', confirmingPayment.id);
       if (error) throw error;
@@ -384,6 +407,9 @@ export function AdminDashboard() {
         payment_date: new Date().toISOString().split('T')[0],
         payment_method: 'cartão de crédito',
         amount: 0,
+        barter_value: 0,
+        barter_description: '',
+        barter_quantity: 1,
         notes: ''
       });
       await loadPayments();
@@ -431,6 +457,9 @@ export function AdminDashboard() {
         payment_date: new Date().toISOString().split('T')[0],
         payment_method: 'cartão de crédito',
         amount: payment.amount,
+        barter_value: 0,
+        barter_description: '',
+        barter_quantity: 1,
         notes: payment.notes || ''
       });
       setIsPaymentFormOpen(true);
@@ -1089,6 +1118,22 @@ export function AdminDashboard() {
                   <label style={labelStyle}>Valor Recebido em Dinheiro (R$) *</label>
                   <input required type="number" min="0" step="0.01" style={inputStyle} value={paymentForm.amount} onChange={e => setPaymentForm({ ...paymentForm, amount: parseFloat(e.target.value) || 0 })} />
                 </div>
+                <div>
+                  <label style={labelStyle}>Valor Recebido em Permuta (R$)</label>
+                  <input type="number" min="0" step="0.01" style={inputStyle} value={paymentForm.barter_value || ''} onChange={e => setPaymentForm({ ...paymentForm, barter_value: parseFloat(e.target.value) || 0 })} placeholder="0,00" />
+                </div>
+                {paymentForm.barter_value > 0 && (
+                  <>
+                    <div>
+                      <label style={labelStyle}>Descrição do Prêmio / Brinde Recebido *</label>
+                      <input required style={inputStyle} value={paymentForm.barter_description} onChange={e => setPaymentForm({ ...paymentForm, barter_description: e.target.value })} placeholder="Ex: Vales de R$ 50 ou Pomadas modeladoras" />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Quantidade Recebida *</label>
+                      <input required type="number" min="1" style={inputStyle} value={paymentForm.barter_quantity} onChange={e => setPaymentForm({ ...paymentForm, barter_quantity: parseInt(e.target.value) || 1 })} />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label style={labelStyle}>Meio de Pagamento</label>
                   <input readOnly style={{ ...inputStyle, opacity: 0.6, cursor: 'not-allowed' }} value="Cartão de Crédito" />
