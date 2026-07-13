@@ -1474,6 +1474,7 @@ export function AdminDashboard() {
       {contractPartner && (
         <ContractViewer
           partner={contractPartner}
+          planDescription={plans.find(p => p.name === contractPartner.plan_name)?.description}
           onClose={() => setContractPartner(null)}
         />
       )}

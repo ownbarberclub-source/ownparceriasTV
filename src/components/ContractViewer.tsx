@@ -5,10 +5,11 @@ import logoImg from '../assets/logo.png';
 
 interface ContractViewerProps {
   partner: Partner;
+  planDescription?: string | null;
   onClose: () => void;
 }
 
-export function ContractViewer({ partner, onClose }: ContractViewerProps) {
+export function ContractViewer({ partner, planDescription, onClose }: ContractViewerProps) {
   const contractRef = useRef<HTMLDivElement>(null);
 
   const formatCurrency = (v: number) =>
@@ -25,8 +26,8 @@ export function ContractViewer({ partner, onClose }: ContractViewerProps) {
 
   const getContractText = () => {
     const clause2 = partner.payment_type === 'permuta'
-      ? `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}" na modalidade de PERMUTA comercial, comprometendo-se a fornecer mensalmente à CONTRATANTE ${partner.barter_product_quantity} unidades do produto/serviço "${partner.barter_product_description}", correspondendo ao valor estimado de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}) por mês.`
-      : `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}", com valor mensal de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}).`;
+      ? `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}" na modalidade de PERMUTA comercial, comprometendo-se a fornecer mensalmente à CONTRATANTE ${partner.barter_product_quantity} unidades do produto/serviço "${partner.barter_product_description}", correspondendo ao valor estimado de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}) por mês.${planDescription ? `\nEspecificações do plano: ${planDescription}` : ''}`
+      : `O(A) CONTRATADO(A) opta pelo plano "${partner.plan_name}", com valor mensal de ${formatCurrency(partner.monthly_price)} (${valorExtenso(partner.monthly_price)}).${planDescription ? `\nEspecificações do plano: ${planDescription}` : ''}`;
 
     const clause6 = partner.payment_type === 'permuta'
       ? `A contraprestação dar-se-á através da entrega mensal dos produtos/serviços detalhados na Cláusula 2ª na sede da CONTRATANTE, devendo ser entregues em perfeitas condições de uso.`
